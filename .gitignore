@@ -396,3 +396,11 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+
+# PowerShell Build Scripts
+*.ps1
+
+# UserTunicRandomizer solution file
+UserTunicRandomizer.sln
+UserTunicRandomizer.csproj

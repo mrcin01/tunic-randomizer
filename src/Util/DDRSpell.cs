@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnhollowerBaseLib;
+using InControl;
 using UnityEngine;
 
 namespace TunicRandomizer {
@@ -17,6 +18,8 @@ namespace TunicRandomizer {
         public List<GameObject> Arrows;
 
         List<string> closestSpellStrings = new List<string>();
+        private List<DPAD> konamiInputSequence = new List<DPAD>();
+        private ToggleObjectBySpell closestPuzzle = null;
 
         private Dictionary<DPAD, string> dpadToChar = new Dictionary<DPAD, string>();
 
@@ -123,30 +126,95 @@ namespace TunicRandomizer {
         }
 
         private void Update() {
-            if (TunicRandomizer.Settings.HolyCrossVisualizer) {
-                float num = 1000000f;
-                closestSpellStrings.Clear();
-                foreach (ToggleObjectBySpell toggleObjectBySpell in spellToggles) {
-                    if (toggleObjectBySpell != null) {
-                        
-                        float sqrMagnitude = (toggleObjectBySpell.gameObject.transform.position - this.gameObject.transform.position).sqrMagnitude;
-                        float spellDistance = new Vector3(toggleObjectBySpell.minDistance, toggleObjectBySpell.minDistance, toggleObjectBySpell.minDistance).sqrMagnitude / 2f;
-                        
-                        if (toggleObjectBySpell.targetSpell != null && sqrMagnitude < num && sqrMagnitude < spellDistance && toggleObjectBySpell.stateVar != null && !toggleObjectBySpell.stateVar.BoolValue) {
-                            num = sqrMagnitude;
-
-                            toggleObjectBySpell.GetComponents<ToggleObjectBySpell>().ToList().ForEach(toggleObject => {
-                                closestSpellStrings.Add(toggleObject.targetSpell);
-                                if (toggleObject.acceptLRMirror) {
-                                    closestSpellStrings.Add(mirrorString(toggleObject.targetSpell));
-                                }
-                            });
-                        }
+            // Always compute the nearest puzzle for auto-solve, regardless of whether the visualizer is enabled
+            float num = 1000000f;
+            closestSpellStrings.Clear();
+            closestPuzzle = null;
+            foreach (ToggleObjectBySpell toggleObjectBySpell in spellToggles) {
+                if (toggleObjectBySpell != null) {
+                    float sqrMagnitude = (toggleObjectBySpell.gameObject.transform.position - this.gameObject.transform.position).sqrMagnitude;
+                    float spellDistance = new Vector3(toggleObjectBySpell.minDistance, toggleObjectBySpell.minDistance, toggleObjectBySpell.minDistance).sqrMagnitude / 2f;
+                    if (toggleObjectBySpell.targetSpell != null && sqrMagnitude < num && sqrMagnitude < spellDistance && toggleObjectBySpell.stateVar != null && !toggleObjectBySpell.stateVar.BoolValue) {
+                        num = sqrMagnitude;
+                        closestPuzzle = toggleObjectBySpell;
                     }
+                }
+            }
+
+            // If visualizer is enabled, populate spell strings and manage arrows
+            if (TunicRandomizer.Settings.HolyCrossVisualizer) {
+                if (closestPuzzle != null) {
+                    closestPuzzle.GetComponents<ToggleObjectBySpell>().ToList().ForEach(toggleObject => {
+                        closestSpellStrings.Add(toggleObject.targetSpell);
+                        if (toggleObject.acceptLRMirror) {
+                            closestSpellStrings.Add(mirrorString(toggleObject.targetSpell));
+                        }
+                    });
                 }
                 Arrows = Arrows.Where(arrow => arrow.active).ToList();
             }
+
+            // Auto-solve logic
+            HandleAutoSolve();
         }
+
+        private void HandleAutoSolve() {
+            if (!TunicRandomizer.Settings.HolyCrossAutoSolve) {
+                konamiInputSequence.Clear();
+                return;
+            }
+
+            if (closestPuzzle == null || closestPuzzle.stateVar == null || closestPuzzle.stateVar.BoolValue) {
+                konamiInputSequence.Clear();
+                return;
+            }
+
+            // Check ability shuffle lock
+            if (SaveFile.GetInt(SaveFlags.AbilityShuffle) == 1 && SaveFile.GetInt(SaveFlags.HolyCrossUnlocked) == 0) {
+                return;
+            }
+
+            // Only Konami Code Mode supported now
+            HandleKonamiCodeInput();
+        }
+
+        private void HandleKonamiCodeInput() {
+            // Track input for Konami code (Up, Down, Left, Right) using InControl or Unity input
+            DPAD lastInput = DPAD.NONE;
+            if (InputManager.ActiveDevice != null) {
+                var dev = InputManager.ActiveDevice;
+                if (dev.DPadUp.WasPressed) lastInput = DPAD.UP;
+                else if (dev.DPadDown.WasPressed) lastInput = DPAD.DOWN;
+                else if (dev.DPadLeft.WasPressed) lastInput = DPAD.LEFT;
+                else if (dev.DPadRight.WasPressed) lastInput = DPAD.RIGHT;
+            } else {
+                if (Input.GetKeyDown(KeyCode.UpArrow)) lastInput = DPAD.UP;
+                else if (Input.GetKeyDown(KeyCode.DownArrow)) lastInput = DPAD.DOWN;
+                else if (Input.GetKeyDown(KeyCode.LeftArrow)) lastInput = DPAD.LEFT;
+                else if (Input.GetKeyDown(KeyCode.RightArrow)) lastInput = DPAD.RIGHT;
+            }
+
+            if (lastInput != DPAD.NONE) {
+                if (konamiInputSequence.Count == 0 || konamiInputSequence[konamiInputSequence.Count - 1] != lastInput) {
+                    konamiInputSequence.Add(lastInput);
+                    if (konamiInputSequence.Count > 4) konamiInputSequence.RemoveAt(0);
+                }
+                if (konamiInputSequence.Count == 4) {
+                    if (konamiInputSequence[0] == DPAD.UP && konamiInputSequence[1] == DPAD.DOWN && konamiInputSequence[2] == DPAD.LEFT && konamiInputSequence[3] == DPAD.RIGHT) {
+                        TriggerPuzzleSolution();
+                        konamiInputSequence.Clear();
+                    }
+                }
+            }
+        }
+
+        private void TriggerPuzzleSolution() {
+            if (closestPuzzle == null || closestPuzzle.stateVar == null || closestPuzzle.stateVar.BoolValue) {
+                return;
+            }
+            closestPuzzle.stateVar.BoolValue = true;
+        }
+
 
         private string mirrorString(string input) {
             return new string(input.Select(x => x == 'l' ? 'r' : (x == 'r' ? 'l' : x)).ToArray());

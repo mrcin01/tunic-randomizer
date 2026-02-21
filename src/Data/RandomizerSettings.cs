@@ -354,6 +354,12 @@ namespace TunicRandomizer {
             set;
         }
 
+        // Simplified: boolean toggle for Holy Cross auto-solve (Konami code only)
+        public bool HolyCrossAutoSolve {
+            get;
+            set;
+        }
+
         public bool HolyCrossVisualizer {
             get;
             set;
@@ -617,6 +623,7 @@ namespace TunicRandomizer {
             MoreSkulls = false;
             ArachnophobiaMode = false;
             HolyCrossVisualizer = false;
+            HolyCrossAutoSolve = false;
             BiggerHeadMode = false;
             TinierFoxMode = false;
             MusicShuffle = false;
